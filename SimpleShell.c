@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <errno.h>
 #include <signal.h>
 #define MAX_COMMANDS 128
 #define MAX_INPUT_LEN 256
@@ -410,8 +411,38 @@ void shell_loop()
     free(offsets);
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    if(argc != 3) {
+        printf("Usage: %s <NCPU> <TSLICE (ms)> \n",argv[0]);
+        exit(1);
+    }
+    int NCPU = (int) strtoul(argv[1], NULL, 10);
+    if (NCPU == 0) {
+        if (errno == EINVAL) {
+            printf("Couldn't parse NCPU\n");
+            exit(1);
+        }
+    } else if (NCPU <= 0) {
+        printf("NCPU must be non-negative\n");
+        exit(1);
+    } else if (errno == ERANGE) {
+        printf("NCPU is too large\n");
+        exit(1);
+    }
+    int TSLICE = (int) strtoul(argv[2], NULL, 10);
+    if (TSLICE == 0) {
+        if (errno == EINVAL) {
+            printf("Couldn't parse TSLICE\n");
+            exit(1);
+        }
+    } else if (TSLICE <= 0) {
+        printf("TSLICE must be non-negative\n");
+        exit(1);
+    } else if (errno == ERANGE) {
+        printf("TSLICE is too large\n");
+        exit(1);
+    }
     shell_loop();
     return 0;
 }
