@@ -68,7 +68,7 @@ void wake() {
     // display_queue();
     // printf("\n-------------\n");
     // printf("Before wake\n");
-    // display_queue();
+    display_queue();
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
         if (process == NULL ) {
@@ -124,6 +124,7 @@ void stop_current() {
     for (int i=0; i<NCPU; i++) {
         if (current[i] != NULL && current[i]->status != TERMINATED) {
             // printf("Stopping %s\n", current[i]->path);
+            if (current[i]->pr < NUMBER_OF_QUEUES) ++current[i]->pr;
             kill(current[i]->pid, SIGSTOP); // TODO: Error checking
             insert_process(current[i]);
             // printf("Inserted %s (%d)\n", current[i]->path, current[i]->pid);
@@ -193,24 +194,26 @@ int main(int argc, char **argv)
     for (int j = 0; j < NCPU; j++) {
         current[j] = NULL;
     }
-    // struct process *process = malloc(sizeof(struct process));
-    // strcpy(process->path, "./fib");
-    // process->pr = 1;
-    // process->pid = 0;
+    struct process *process = malloc(sizeof(struct process));
+    strcpy(process->path, "./fib");
+    process->pr = 1;
+    process->pid = 0;
 
-    // struct process *process2 = malloc(sizeof(struct process));
-    // strcpy(process2->path, "./fib2");
-    // process2->pr = 1;
-    // process2->pid = 0;
-    // insert_process(process);
-    // usleep(1000*50);
-    // insert_process(process2);
+    struct process *process2 = malloc(sizeof(struct process));
+    strcpy(process2->path, "./fib2");
+    process2->pr = 1;
+    process2->pid = 0;
+    insert_process(process);
+
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
     sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
     sa.sa_sigaction = &signal_handler;
     sigaction(SIGALRM, &sa, NULL);
     sigaction(SIGCHLD, &sa, NULL);
+
     start();
+    usleep(1000*50);
+    insert_process(process2);
     while (1);
 }
