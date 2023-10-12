@@ -85,8 +85,20 @@ void wake() {
     }
 }
 
+void enqueue_processes(){
+    for (int i = 0; i < shm->index; i++){
+        struct process *process = malloc(sizeof(struct process));
+        strcpy(process->path, shm->command[i]);
+        process->pr = shm->priorities[i];
+        process->pid = -1;
+        insert_process(process);
+    }
+    shm->index = 0;
+}
+
 void start() {
     while (1) {
+        enqueue_processes();
         for (int i=0; i<NCPU; i++) {
             if (current[i] != NULL && current[i]->pid > 0) {
                 kill(current[i]->pid, SIGSTOP);

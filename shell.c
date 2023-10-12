@@ -17,7 +17,9 @@
 #define NUMBER_OF_QUEUES 4
 
 typedef struct {
-    struct process pqueue[NUMBER_OF_QUEUES];
+    char command[MAX_COMMANDS][MAX_INPUT_LEN];
+    int priorities[MAX_COMMANDS];
+    int index;
 } shm_t;
 shm_t *shm;
 
@@ -31,6 +33,7 @@ int create_process_and_run(char **command){
             int pr = -1;
             if (command[1] == NULL) {
                 printf("Usage: %s <Executable>\n", command[0]);
+                return;
             } else if (command[2] == NULL) {
                 pr = 1;
             } else if (command[3] == NULL) {
@@ -40,11 +43,13 @@ int create_process_and_run(char **command){
                     exit(1);
                 }
             }
-            struct process *process = malloc(sizeof(struct process));
-            strcpy(process->path, command[1]);
-            process->pr = pr;
-            process->pid = -1;
-            insert_process(process);
+            strcpy(shm->command[index], command[1]);
+            shm->priorities[index++] = pr;
+            // struct process *process = malloc(sizeof(struct process));
+            // strcpy(process->path, command[1]);
+            // process->pr = pr;
+            // process->pid = -1;
+            // insert_process(process);
         } else {
             execvp(command[0], command);
             perror("Exec failed");
