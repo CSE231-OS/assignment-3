@@ -11,18 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 #include "common.h"
-#define MAX_COMMANDS 128
-#define MAX_INPUT_LEN 256
-#define MAX_INPUT_WORDS 128
-#define NUMBER_OF_QUEUES 4
 
-typedef struct {
-    char command[MAX_COMMANDS][MAX_INPUT_LEN];
-    int priorities[MAX_COMMANDS];
-    int index;
-} shm_t;
 shm_t *shm;
-
 int create_process_and_run(char **command){
     int status = fork();
     if (status < 0){
@@ -33,7 +23,7 @@ int create_process_and_run(char **command){
             int pr = -1;
             if (command[1] == NULL) {
                 printf("Usage: %s <Executable>\n", command[0]);
-                return;
+                return -1;
             } else if (command[2] == NULL) {
                 pr = 1;
             } else if (command[3] == NULL) {
@@ -43,8 +33,8 @@ int create_process_and_run(char **command){
                     exit(1);
                 }
             }
-            strcpy(shm->command[index], command[1]);
-            shm->priorities[index++] = pr;
+            strcpy(shm->command[shm->index], command[1]);
+            shm->priorities[shm->index++] = pr;
             // struct process *process = malloc(sizeof(struct process));
             // strcpy(process->path, command[1]);
             // process->pr = pr;
@@ -139,7 +129,7 @@ int main(int argc, char **argv)
         exit(1);
     }
     
-    int fd = shm_open("shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
     ftruncate(fd, sizeof(shm_t));  // TODO: Error checking
     shm = mmap(
         NULL,                               /* void *__addr */

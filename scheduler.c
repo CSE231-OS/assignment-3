@@ -1,15 +1,19 @@
+#include <fcntl.h>           /* For O_* constants */
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>        /* For mode constants */
+#include <sys/time.h>
 #include <unistd.h>
 #include "common.h"
-#define NUMBER_OF_QUEUES 4
+#define RUNNING 1
+#define TERMINATED 2
 
 struct process queue[NUMBER_OF_QUEUES + 1];
 struct process **current;
 int NCPU, TSLICE;
-
 // struct process *new_process(int pr){
 //     struct process *temp;
 //     temp = malloc(sizeof(struct process));
@@ -63,7 +67,8 @@ void wake() {
         }
         current[i] = process;
         printf("\tWaking %s ", process->path);
-        if (process->pid == -1) {
+        if (process->pid == 0) {
+            process->status = RUNNING;
             printf("by execvp\n");
             int status = fork();
             process->pid = status;
@@ -85,6 +90,7 @@ void wake() {
     }
 }
 
+shm_t *shm;
 void enqueue_processes(){
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
@@ -96,17 +102,55 @@ void enqueue_processes(){
     shm->index = 0;
 }
 
+void stop_current() {
+    for (int i=0; i<NCPU; i++) {
+        if (current[i] != NULL && current[i]->status != TERMINATED) {
+            printf("Stopping %s\n", current[i]->path);
+            kill(current[i]->pid, SIGSTOP); // TODO: Error checking
+            insert_process(current[i]);
+        }
+    }
+}
+
+void start_round() {
+    printf("Starting round\n");
+    enqueue_processes();
+    stop_current();
+    wake();
+    printf("Round ended\n");
+}
+
+struct itimerval timer_value;
 void start() {
-    while (1) {
-        enqueue_processes();
+    int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    shm = mmap(
+        NULL,                               /* void *__addr */
+        sizeof(shm_t),                      /* size_t __len */
+        PROT_READ | PROT_WRITE,             /* int __prot */
+        MAP_SHARED,                         /* int __flags */
+        fd,                                 /* int __fd */
+        0                                   /* off_t __offset */
+    );  // TODO: Error checking
+    printf("%d\n", shm->index);
+    timer_value.it_value.tv_sec = TSLICE/1000;
+    timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
+    timer_value.it_interval.tv_sec = TSLICE/1000;
+    timer_value.it_interval.tv_usec = TSLICE%1000 * 1000;
+    start_round();
+    setitimer(ITIMER_REAL, &timer_value, NULL);
+}
+
+void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
+    if (signum == SIGALRM) {
+        start_round();
+    } else if (signum == SIGCHLD) {
+        int pid = siginfo->si_pid;
         for (int i=0; i<NCPU; i++) {
-            if (current[i] != NULL && current[i]->pid > 0) {
-                kill(current[i]->pid, SIGSTOP);
-                insert_process(current[i]);
+            if (current[i]->pid == pid) {
+                printf("%s terminated\n", current[i]->path);
+                current[i]->status = TERMINATED;
             }
         }
-        wake();
-        sleep(TSLICE);
     }
 }
 
@@ -116,7 +160,7 @@ int main(int argc, char **argv)
     current = malloc(sizeof(struct process *) * NCPU);
     for (int i = 1; i <= NUMBER_OF_QUEUES; i++) {
         queue[i].pr = i;
-        queue[i].pid = 0;
+        // queue[i].pid = 0;
         queue[i].next = NULL;
         queue[i].tail = NULL;
     }
@@ -135,5 +179,12 @@ int main(int argc, char **argv)
     // printf("Inserting\n");
     // insert_process(process);
     // insert_process(process2);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
+    sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    sa.sa_sigaction = &signal_handler;
+    sigaction(SIGALRM, &sa, NULL);
+    sigaction(SIGCHLD, &sa, NULL);
     start();
+    while (1);
 }

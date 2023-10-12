@@ -29,6 +29,8 @@ int main(int argc, char **argv)
     struct sigaction sig;
     memset(&sig, 0, sizeof(struct sigaction));
     sig.sa_handler = my_handler;
+    // sigemptyset(&sig.sa_mask);
+    sig.sa_flags = SA_NOCLDSTOP;
     sigaction(SIGINT, &sig, NULL);
     sigaction(SIGCONT, &sig, NULL);
     sigaction(SIGALRM, &sig, NULL);
