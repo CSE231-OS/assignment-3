@@ -59,7 +59,6 @@ void wake() {
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
         if (process == NULL) {
-            printf("\tQueue empty\n");
             break;
         }
         current[i] = process;
@@ -112,17 +111,17 @@ int main(int argc, char **argv)
     for (int j=0; j<NCPU; j++) {
         current[j] = NULL;
     }
-    struct process *process = malloc(sizeof(struct process));
-    strcpy(process->path, "./fib");
-    process->pr = 1;
-    process->pid = -1;
+    // struct process *process = malloc(sizeof(struct process));
+    // strcpy(process->path, "./fib");
+    // process->pr = 1;
+    // process->pid = -1;
 
-    struct process *process2 = malloc(sizeof(struct process));
-    strcpy(process2->path, "./fib2");
-    process2->pr = 1;
-    process2->pid = -1;
+    // struct process *process2 = malloc(sizeof(struct process));
+    // strcpy(process2->path, "./fib2");
+    // process2->pr = 1;
+    // process2->pid = -1;
     // printf("Inserting\n");
-    insert_process(process);
-    insert_process(process2);
+    // insert_process(process);
+    // insert_process(process2);
     start();
 }

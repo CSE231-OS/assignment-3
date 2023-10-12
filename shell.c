@@ -27,7 +27,7 @@ int create_process_and_run(char **command){
         perror("Failed Fork\n");
         exit(0);
     } else if (status == 0){
-        if (command[0] == "submit"){
+        if (strcmp(command[0], "submit") == 0){
             int pr = -1;
             if (command[1] == NULL) {
                 printf("Usage: %s <Executable>\n", command[0]);
@@ -41,12 +41,13 @@ int create_process_and_run(char **command){
                 }
             }
             struct process *process = malloc(sizeof(struct process));
-            process->path = command[1];
+            strcpy(process->path, command[1]);
             process->pr = pr;
             process->pid = -1;
-            insert_process(shm->pqueue, process);
+            insert_process(process);
         } else {
-            fprintf(stderr, "Command unexpected\n");
+            execvp(command[0], command);
+            perror("Exec failed");
             exit(1);
         }
         
@@ -76,6 +77,7 @@ char **read_user_input(char *input, char **command){
         ++i;
         word = strtok(NULL, delim);
     }
+    command[i-1][strlen(command[i-1])-1] = '\0';
     command[i] = NULL;
     return command;
 }
