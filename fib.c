@@ -8,6 +8,5 @@ int fib(int n){
 
 int main(int argc, char **argv)
 {
-    printf("Started\n");
     printf("41: %d\n", fib(41));
 }

@@ -14,7 +14,7 @@ void my_handler(int signum){
     }
     else if (signum == SIGCONT){
         //
-        printf("%s recieved SIGCONT\n", name);
+        // printf("%s recieved SIGCONT\n", name);
     }
     else if (signum == SIGALRM){
         //
@@ -25,7 +25,7 @@ int main(int argc, char **argv)
 {
     /* You can add any code here you want to support your SimpleScheduler implementation*/
     name = argv[0];
-    printf("name: %s\n", name);
+    // printf("name: %s\n", name);
     struct sigaction sig;
     memset(&sig, 0, sizeof(struct sigaction));
     sig.sa_handler = my_handler;

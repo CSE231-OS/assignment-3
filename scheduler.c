@@ -23,6 +23,11 @@ int NCPU, TSLICE;
 // }
 
 void insert_process(struct process *process){
+    process->status = RUNNING;
+    // printf(">> Inserting %s with next = %p\n", process->path, process->next);
+    if (process->next != NULL) {
+        // printf(">>\t\tNext=%s (%d)\n", process->next->path, process->next->pid);
+    }
     int pr = process->pr;
     if (queue[pr].tail == NULL){
         queue[pr].next = process;
@@ -34,11 +39,13 @@ void insert_process(struct process *process){
 }
 
 struct process *delete_process(){
+    // printf(">> Deleting\n");
     for (int i = 1; i <= NUMBER_OF_QUEUES; i++){
         if (queue[i].next == NULL) continue;
         struct process *temp = queue[i].next;
         queue[i].next = queue[i].next->next;
         if (queue[i].next == NULL) queue[i].tail = NULL;
+        temp->next = NULL;
         return temp;
     }
     return NULL;
@@ -49,7 +56,7 @@ void display_queue(){
         struct process *temp = queue[i].next;
         printf("%d: ", i);
         while (temp != NULL){
-            printf("%d ", temp->pid);
+            printf("%d (status=%d)", temp->pid, temp->status);
             temp = temp->next;
         }
         printf("\n");
@@ -60,16 +67,23 @@ void wake() {
     // printf("\n-------------\n");
     // display_queue();
     // printf("\n-------------\n");
+    // printf("Before wake\n");
+    // display_queue();
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
-        if (process == NULL) {
+        if (process == NULL ) {
             break;
         }
+        // if (process->status == TERMINATED) {
+        //     printf("------ Terminated process in queue ----------\n");
+        //     display_queue();
+        //     continue;
+        // }
         current[i] = process;
-        printf("\tWaking %s ", process->path);
+        // printf("\tWaking %s ", process->path);
         if (process->pid == 0) {
             process->status = RUNNING;
-            printf("by execvp\n");
+            // printf("by execvp\n");
             int status = fork();
             process->pid = status;
             if (status < 0) {
@@ -77,26 +91,30 @@ void wake() {
                 exit(1);
             } else if (status == 0) {
                 char* argv[2] = {process->path, NULL};
-                fprintf(stderr, "path: %s\n", process->path);
+                // fprintf(stderr, "path: %s\n", process->path);
                 execvp(process->path, argv); // TODO: Error checking
                 fprintf(stderr, "Failed exec\n");
             } else {
                 // perror("Error");
             }
         } else {
-            printf("by SIGCONT\n");
+            // printf("by SIGCONT\n");
             kill(process->pid, SIGCONT); // TODO: Error checking
         }
     }
+    // printf("After wake\n");
+    // display_queue();
 }
 
 shm_t *shm;
 void enqueue_processes(){
+    // printf("Enqueue called\n");
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
         strcpy(process->path, shm->command[i]);
         process->pr = shm->priorities[i];
-        process->pid = -1;
+        process->pid = 0;
+        // printf("Initial insert for %s\n", process->path);
         insert_process(process);
     }
     shm->index = 0;
@@ -105,19 +123,24 @@ void enqueue_processes(){
 void stop_current() {
     for (int i=0; i<NCPU; i++) {
         if (current[i] != NULL && current[i]->status != TERMINATED) {
-            printf("Stopping %s\n", current[i]->path);
+            // printf("Stopping %s\n", current[i]->path);
             kill(current[i]->pid, SIGSTOP); // TODO: Error checking
             insert_process(current[i]);
+            // printf("Inserted %s (%d)\n", current[i]->path, current[i]->pid);
         }
+        // if (current[i] != NULL && current[i]->status == TERMINATED) {
+        //     display_queue();
+        // }
+        current[i] = NULL;
     }
 }
 
 void start_round() {
-    printf("Starting round\n");
+    // printf("Starting round\n");
     enqueue_processes();
     stop_current();
     wake();
-    printf("Round ended\n");
+    // printf("Round ended\n");
 }
 
 struct itimerval timer_value;
@@ -131,7 +154,6 @@ void start() {
         fd,                                 /* int __fd */
         0                                   /* off_t __offset */
     );  // TODO: Error checking
-    printf("%d\n", shm->index);
     timer_value.it_value.tv_sec = TSLICE/1000;
     timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
     timer_value.it_interval.tv_sec = TSLICE/1000;
@@ -144,10 +166,14 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
     if (signum == SIGALRM) {
         start_round();
     } else if (signum == SIGCHLD) {
+        // display_queue();
         int pid = siginfo->si_pid;
         for (int i=0; i<NCPU; i++) {
+            if (current[i] == NULL) {
+                break;
+            }
             if (current[i]->pid == pid) {
-                printf("%s terminated\n", current[i]->path);
+                // printf("%s terminated\n", current[i]->path);
                 current[i]->status = TERMINATED;
             }
         }
@@ -170,14 +196,14 @@ int main(int argc, char **argv)
     // struct process *process = malloc(sizeof(struct process));
     // strcpy(process->path, "./fib");
     // process->pr = 1;
-    // process->pid = -1;
+    // process->pid = 0;
 
     // struct process *process2 = malloc(sizeof(struct process));
     // strcpy(process2->path, "./fib2");
     // process2->pr = 1;
-    // process2->pid = -1;
-    // printf("Inserting\n");
+    // process2->pid = 0;
     // insert_process(process);
+    // usleep(1000*50);
     // insert_process(process2);
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
