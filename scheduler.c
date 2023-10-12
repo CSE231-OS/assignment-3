@@ -102,13 +102,13 @@ int main(int argc, char **argv)
 {
     NCPU = atoi(argv[1]); TSLICE = atoi(argv[2]);
     current = malloc(sizeof(struct process *) * NCPU);
-    for (int i=1; i<=NUMBER_OF_QUEUES; i++) {
+    for (int i = 1; i <= NUMBER_OF_QUEUES; i++) {
         queue[i].pr = i;
         queue[i].pid = 0;
         queue[i].next = NULL;
         queue[i].tail = NULL;
     }
-    for (int j=0; j<NCPU; j++) {
+    for (int j = 0; j < NCPU; j++) {
         current[j] = NULL;
     }
     // struct process *process = malloc(sizeof(struct process));
