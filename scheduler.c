@@ -29,6 +29,8 @@ struct process history;
 //     return temp;
 // }
 int debugging = 0;
+int BLOCKING_SIGINT = 0;
+int ALLOW_TERMINATION = 0;
 
 void add_to_history(struct process *process){
     struct process *temp = history.next;
@@ -70,7 +72,7 @@ void sort_history(){
 
 void display_history(){
     struct process *curr = history.next;
-    printf("\n");
+    printf("\nHistory:\n");
     while (curr != NULL){
         printf("%d) %s\n", curr->index, curr->path);
         printf("\tPID: %d\n", curr->pid);
@@ -79,6 +81,12 @@ void display_history(){
         printf("\n");
         curr = curr->next;
     }
+}
+
+void terminate() {
+    sort_history();
+    display_history();
+    exit(0);
 }
 
 void insert_process(struct process *process){
@@ -108,6 +116,15 @@ struct process *delete_process(){
         return temp;
     }
     return NULL;
+}
+
+int no_pending_processes() {
+    for (int i=1; i<=NUMBER_OF_QUEUES; i++) {
+        if (queue[i].next != NULL) {
+            return 0;
+        }
+    }
+    return shm->index == 0;
 }
 
 void display_queue(){
@@ -188,8 +205,10 @@ void enqueue_processes(){
 
 void stop_current() {
     clock_gettime(CLOCK_MONOTONIC, &now);
+    int processes_interrupted = 0;
     for (int i=0; i<NCPU; i++) {
         if (current[i] != NULL && current[i]->status != TERMINATED) {
+            processes_interrupted++;
             // printf("Stopping %s\n", current[i]->path);
             if (current[i]->pr < NUMBER_OF_QUEUES) ++current[i]->pr;
             kill(current[i]->pid, SIGSTOP); // TODO: Error checking
@@ -203,6 +222,7 @@ void stop_current() {
         // }
         current[i] = NULL;
     }
+    if (BLOCKING_SIGINT && processes_interrupted == 0 && no_pending_processes()) terminate();
 }
 
 void reset_priorities() {
@@ -278,6 +298,7 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
         // display_queue();
         clock_gettime(CLOCK_MONOTONIC, &now);
         int pid = siginfo->si_pid;
+        int processes_alive = 0;
         for (int i=0; i<NCPU; i++) {
             if (current[i] == NULL) {
                 break;
@@ -287,15 +308,22 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
                 current[i]->status = TERMINATED;
                 current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
                 add_to_history(current[i]);
+            } else if (current[i]->status != TERMINATED) {
+                processes_alive++;
             }
         }
+        if (BLOCKING_SIGINT && processes_alive == 0 && no_pending_processes()) terminate();
     } else if (signum == SIGINT){
         if (debugging) {
             shm_unlink("/shell-scheduler");
         }
-        sort_history();
-        display_history();
-        exit(0);
+        BLOCKING_SIGINT = 1;
+        int processes_alive = 0;
+        for (int i=0; i<NCPU; i++) {
+            if (current[i] == NULL) continue;
+            if (current[i]->status != TERMINATED) processes_alive++;
+        }
+        if (processes_alive == 0 && no_pending_processes()) terminate();
     }
 }
 

@@ -155,13 +155,18 @@ int main(int argc, char **argv)
     shm->index = 0;
     int status = fork();
     if (status == 0) {
-        char **sched_argv = malloc(sizeof(char *)*4);  // TODO: Error checking
-        char name[12] = "./scheduler";
-        sched_argv[0] = name;
-        sched_argv[1] = argv[1];
-        sched_argv[2] = argv[2];
-        sched_argv[3] = NULL;
-        execvp(name, sched_argv);  // TODO: Error checking
+        status = fork();
+        if (status == 0) {
+            char **sched_argv = malloc(sizeof(char *)*4);  // TODO: Error checking
+            char name[12] = "./scheduler";
+            sched_argv[0] = name;
+            sched_argv[1] = argv[1];
+            sched_argv[2] = argv[2];
+            sched_argv[3] = NULL;
+            execvp(name, sched_argv);  // TODO: Error checking
+        } else {
+            _exit(0);
+        }
     } else if (status > 0) {
         struct sigaction sa;
         memset(&sa, 0, sizeof(struct sigaction));
