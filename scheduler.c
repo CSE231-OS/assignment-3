@@ -21,13 +21,7 @@ int rounds_till_reset = RESET_INTERVAL;
 int process_index = 1;
 struct timespec now;
 struct process history;
-// struct process *new_process(int pr){
-//     struct process *temp;
-//     temp = malloc(sizeof(struct process));
-//     temp->pr = pr;
-//     temp->next = NULL;
-//     return temp;
-// }
+
 int debugging = 0;
 int BLOCKING_SIGINT = 0;
 int ALLOW_TERMINATION = 0;
@@ -72,6 +66,7 @@ void sort_history(){
 
 void display_history(){
     struct process *curr = history.next;
+    struct process *temp;
     printf("\nHistory:\n");
     while (curr != NULL){
         printf("%d) %s\n", curr->index, curr->path);
@@ -79,23 +74,40 @@ void display_history(){
         printf("\tTotal Wait Time: %.3f ms\n", curr->total_wait_time);
         printf("\tTotal Execution Time: %.3f ms\n", curr->total_exe_time);
         printf("\n");
+        temp = curr;
         curr = curr->next;
+        free(temp);
     }
+}
+
+void cleanup() {
+    int ret = munmap(shm, sizeof(shm_t));
+    if (ret == -1) {
+        perror("Unable to unmap shared memory");
+        exit(1);
+    }
+    ret = sem_destroy(&shm->mutex);
+    if (ret == -1) {
+        perror("Unable to destroy semaphore");
+        exit(1);
+    }
+    ret = shm_unlink("/shell-scheduler");
+    if (ret == -1) {
+        perror("Unable to unlink shared memory");
+        exit(1);
+    }
+    exit(0);
 }
 
 void terminate() {
     sort_history();
     display_history();
-    shm_unlink("/shell-scheduler");
+    cleanup();
     exit(0);
 }
 
 void insert_process(struct process *process){
     process->status = RUNNING;
-    // printf(">> Inserting %s with next = %p\n", process->path, process->next);
-    if (process->next != NULL) {
-        // printf(">>\t\tNext=%s (%d)\n", process->next->path, process->next->pid);
-    }
     int pr = process->pr;
     if (queue[pr].tail == NULL){
         queue[pr].next = process;
@@ -125,9 +137,17 @@ int no_pending_processes() {
             return 0;
         }
     }
-    sem_wait(&shm->mutex);
+    int ret = sem_wait(&shm->mutex);
+    if (ret == -1) {
+        perror("Unable to wait on mutex");
+        exit(1);
+    }
     int empty = shm->index == 0;
-    sem_post(&shm->mutex);
+    ret = sem_post(&shm->mutex);
+    if (ret == -1) {
+        perror("Unable to post on mutex");
+        exit(1);
+    }
     return empty;
 }
 
@@ -144,29 +164,21 @@ void display_queue(){
 }
 
 void wake() {
-    // printf("\n-------------\n");
-    // display_queue();
-    // printf("\n-------------\n");
-    // printf("Before wake\n");
-    // display_queue();
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    int ret = clock_gettime(CLOCK_MONOTONIC, &now);
+    if (ret == -1) {
+        perror("Unable to get clock time");
+        exit(1);
+    }
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
         if (process == NULL ) {
             break;
         }
-        // if (process->status == TERMINATED) {
-        //     printf("------ Terminated process in queue ----------\n");
-        //     display_queue();
-        //     continue;
-        // }
         current[i] = process;
         process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
         process->prev_exe_time = now;
-        // printf("\tWaking %s ", process->path);
         if (process->pid == 0) {
             process->status = RUNNING;
-            // printf("by execvp\n");
             int status = fork();
             process->pid = status;
             if (status < 0) {
@@ -174,27 +186,34 @@ void wake() {
                 exit(1);
             } else if (status == 0) {
                 char* argv[2] = {process->path, NULL};
-                execvp(process->path, argv); // TODO: Error checking
+                execvp(process->path, argv);
                 fprintf(stderr, "Failed exec for path %s\n", process->path);
                 perror("Error");
-            } else {
-                // perror("Error");
             }
         } else {
-            // printf("by SIGCONT\n");
-            kill(process->pid, SIGCONT); // TODO: Error checking
+            int ret = kill(process->pid, SIGCONT);
+            if (ret == -1) {
+                fprintf(stderr, "Unable to continue child process %s. ", process->path);
+                perror("Error");
+                exit(1);
+            }
         }
     }
-    // printf("After wake\n");
-    // display_queue();
 }
 
 shm_t *shm;
 void enqueue_processes(){
-    // printf("Enqueue called\n");
-    sem_wait(&shm->mutex);
+    int ret = sem_wait(&shm->mutex);
+    if (ret == -1) {
+        perror("Unable to wait on mutex");
+        exit(1);
+    }
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
+        if (process == NULL) {
+            perror("Unable to allocate memory for process");
+            exit(1);
+        }
         strcpy(process->path, shm->command[i]);
         process->pr = shm->priorities[i];
         process->pid = 0;
@@ -206,26 +225,33 @@ void enqueue_processes(){
         insert_process(process);
     }
     shm->index = 0;
-    sem_post(&shm->mutex);
+    ret = sem_post(&shm->mutex);
+    if (ret == -1) {
+        perror("Unable to post on mutex");
+        exit(1);
+    }
 }
 
 void stop_current() {
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    int ret = clock_gettime(CLOCK_MONOTONIC, &now);
+    if (ret == -1) {
+        perror("Unable to get clock time");
+        exit(1);
+    }
     int processes_interrupted = 0;
     for (int i=0; i<NCPU; i++) {
         if (current[i] != NULL && current[i]->status != TERMINATED) {
             processes_interrupted++;
-            // printf("Stopping %s\n", current[i]->path);
             if (current[i]->pr < NUMBER_OF_QUEUES) ++current[i]->pr;
-            kill(current[i]->pid, SIGSTOP); // TODO: Error checking
+            int ret = kill(current[i]->pid, SIGSTOP);
+            if (ret == -1) {
+                fprintf(stderr, "Unable to stop child process %s\n", current[i]->path);
+                exit(1);
+            }
             insert_process(current[i]);
             current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
             current[i]->prev_wait_time = now;
-            // printf("Inserted %s (%d)\n", current[i]->path, current[i]->pid);
         }
-        // if (current[i] != NULL && current[i]->status == TERMINATED) {
-        //     display_queue();
-        // }
         current[i] = NULL;
     }
     if (BLOCKING_SIGINT && processes_interrupted == 0 && no_pending_processes()) terminate();
@@ -251,28 +277,21 @@ void reset_priorities() {
 }
 
 void start_round() {
-    // printf("Starting round\n");
     enqueue_processes();
     stop_current();
     if (rounds_till_reset-- == 0) {
         reset_priorities();
         rounds_till_reset = RESET_INTERVAL;
     }
-    // display_queue();
-    // printf("\n");
     wake();
-    // printf("Round ended\n");
 }
 
 struct itimerval timer_value;
 void start() {
-    // int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);  // Actual line
-    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking, cleanup
-    debugging = fd != -1;
-    if (!debugging) {
-        fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
-    } else {
-        ftruncate(fd, sizeof(shm_t));
+    int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+    if (fd == -1) {
+        perror("Scheduler unable to open shared memory");
+        exit(1);
     }
     shm = mmap(
         NULL,                               /* void *__addr */
@@ -281,28 +300,37 @@ void start() {
         MAP_SHARED,                         /* int __flags */
         fd,                                 /* int __fd */
         0                                   /* off_t __offset */
-    );  // TODO: Error checking
-    if (debugging) {
-        int priorities[2] = {1, 1};
-        char commands[2][MAX_INPUT_LEN] = {"./fib", "./fib2"};
-        memcpy(shm->command, commands, sizeof(commands));
-        memcpy(shm->priorities, priorities, sizeof(priorities));
-        shm->index = 2;
+    );
+    if (shm == MAP_FAILED) {
+        perror("Scheduler unable to map shared memory");
+        exit(1);
+    }
+    int ret = close(fd);
+    if (ret == -1) {
+        perror("Scheduler unable to close shared memory fd");
+        exit(1);
     }
     timer_value.it_value.tv_sec = TSLICE/1000;
     timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
     timer_value.it_interval.tv_sec = TSLICE/1000;
     timer_value.it_interval.tv_usec = TSLICE%1000 * 1000;
     start_round();
-    setitimer(ITIMER_REAL, &timer_value, NULL);
+    ret = setitimer(ITIMER_REAL, &timer_value, NULL);
+    if (ret == -1) {
+        perror("Unable to set timer");
+        exit(1);
+    }
 }
 
 void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
     if (signum == SIGALRM) {
         start_round();
     } else if (signum == SIGCHLD) {
-        // display_queue();
-        clock_gettime(CLOCK_MONOTONIC, &now);
+        int ret = clock_gettime(CLOCK_MONOTONIC, &now);
+        if (ret == -1) {
+            perror("Unable to get clock time");
+            exit(1);
+        }
         int pid = siginfo->si_pid;
         int processes_alive = 0;
         for (int i=0; i<NCPU; i++) {
@@ -310,7 +338,6 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
                 break;
             }
             if (current[i]->pid == pid) {
-                // printf("%s terminated\n", current[i]->path);
                 current[i]->status = TERMINATED;
                 current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
                 add_to_history(current[i]);
@@ -334,9 +361,12 @@ int main(int argc, char **argv)
 {
     NCPU = atoi(argv[1]); TSLICE = atoi(argv[2]);
     current = malloc(sizeof(struct process *) * NCPU);
+    if (current == NULL) {
+        perror("Unable to allocate memory for current processes");
+        exit(1);
+    }
     for (int i = 1; i <= NUMBER_OF_QUEUES; i++) {
         queue[i].pr = i;
-        // queue[i].pid = 0;
         queue[i].next = NULL;
         queue[i].tail = NULL;
     }
@@ -350,12 +380,28 @@ int main(int argc, char **argv)
     memset(&sa, 0, sizeof(struct sigaction));
     sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
     sa.sa_sigaction = &signal_handler;
-    sigaction(SIGALRM, &sa, NULL);
-    sigaction(SIGCHLD, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
+    int ret = sigaction(SIGALRM, &sa, NULL);
+    if (ret == -1) {
+        perror("Unable to bind SIGALRM");
+        exit(1);
+    }
+    ret = sigaction(SIGCHLD, &sa, NULL);
+    if (ret == -1) {
+        perror("Unable to bind SIGCHLD");
+        exit(1);
+    }
+    ret = sigaction(SIGINT, &sa, NULL);
+    if (ret == -1) {
+        perror("Unable to bind SIGINT");
+        exit(1);
+    }
 
     start();
     while (1) {
-        usleep(TSLICE * 1000);
+        ret = usleep(TSLICE * 1000);
+        if (ret == -1 && errno != EINTR) {
+            perror("Unable to sleep:");
+            exit(1);
+        }
     }
 }

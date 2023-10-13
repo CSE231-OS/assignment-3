@@ -18,7 +18,7 @@ struct timespec now;
 int create_process_and_run(char **command){
     int status = fork();
     if (status < 0){
-        perror("Failed Fork\n");
+        perror("Failed fork");
         exit(0);
     } else if (status == 0){
         if (strcmp(command[0], "submit") == 0){
@@ -37,16 +37,19 @@ int create_process_and_run(char **command){
             } else {
                 exit(1);
             }
-            sem_wait(&shm->mutex);
+            int ret = sem_wait(&shm->mutex);
+            if (ret == -1) {
+                perror("Unable to wait for semaphore");
+                exit(1);
+            }
             strcpy(shm->command[shm->index], command[1]);
             shm->priorities[shm->index] = pr;
             shm->submission_time[shm->index++] = now;
-            sem_post(&shm->mutex);
-            // struct process *process = malloc(sizeof(struct process));
-            // strcpy(process->path, command[1]);
-            // process->pr = pr;
-            // process->pid = -1;
-            // insert_process(process);
+            ret = sem_post(&shm->mutex);
+            if (ret == -1) {
+                perror("Unable to post to semaphore");
+                exit(1);
+            }
         } else {
             execvp(command[0], command);
             perror("Exec failed");
@@ -86,27 +89,38 @@ char **read_user_input(char *input, char **command){
 void shell_loop()
 {
     int status;
-    char *input;
-    char **command;
+    char *input = malloc(sizeof(char)*MAX_INPUT_LEN);
+    char **command = malloc(sizeof(char *)*MAX_INPUT_WORDS);
     char *cwd;
     do {
         cwd = getcwd(NULL, 0);
-        input = malloc(256);
-        command = malloc(256);
+        if (cwd == NULL) {
+            perror("Unable to get current working directory");
+            exit(1);
+        }
         printf("\033[1m\033[33mgroup-28@shell\033[0m:\033[1m\033[35m%s\033[0m$ ", cwd);
         fgets(input, sizeof(char)*MAX_INPUT_LEN, stdin);
-        clock_gettime(CLOCK_MONOTONIC, &now);
+        int ret = clock_gettime(CLOCK_MONOTONIC, &now);
+        if (ret == -1) {
+            perror("Unable to get time");
+            exit(1);
+        }
         input[strlen(input) - 1] = '\0';
         if (input[0] == '\0') continue;
         command = read_user_input(input, command);
         status = launch(command);
-        free(command);
-        free(input);
     } while (status);
+    free(command);
+    free(input);
 }
 
 void signal_handler(int signum) {
     if (signum == SIGINT) {
+        int ret = munmap(shm, sizeof(shm_t));
+        if (ret == -1) {
+            perror("Unable to unmap shared memory");
+            exit(1);
+        }
         exit(0);
     }
 }
@@ -143,8 +157,16 @@ int main(int argc, char **argv)
         printf("TSLICE is too large\n");
         exit(1);
     }
-    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking, cleanup
-    ftruncate(fd, sizeof(shm_t));  // TODO: Error checking
+    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+    if (fd == -1) {
+        perror("Unable to open shared memory");
+        exit(1);
+    }
+    int ret = ftruncate(fd, sizeof(shm_t));
+    if (ret == -1) {
+        perror("Unable to truncate shared memory");
+        exit(1);
+    }
     shm = mmap(
         NULL,                               /* void *__addr */
         sizeof(shm_t),                      /* size_t __len */
@@ -152,20 +174,39 @@ int main(int argc, char **argv)
         MAP_SHARED,                         /* int __flags */
         fd,                                 /* int __fd */
         0                                   /* off_t __offset */
-    );  // TODO: Error checking
+    );
+    if (shm == MAP_FAILED) {
+        perror("Unable to map shared memory");
+        exit(1);
+    }
+    ret = close(fd);
+    if (ret == -1) {
+        perror("Unable to close shared memory fd");
+        exit(1);
+    }
     shm->index = 0;
-    sem_init(&shm->mutex, 1, 1);  // TODO: Cleanup
+    ret = sem_init(&shm->mutex, 1, 1);
+    if (ret == -1) {
+        perror("Unable to initialize semaphore");
+        exit(1);
+    }
     int status = fork();
     if (status == 0) {
         status = fork();
         if (status == 0) {
-            char **sched_argv = malloc(sizeof(char *)*4);  // TODO: Error checking
+            char **sched_argv = malloc(sizeof(char *)*4);
+            if (sched_argv == NULL) {
+                perror("Unable to allocate memory");
+                exit(1);
+            }
             char name[12] = "./scheduler";
             sched_argv[0] = name;
             sched_argv[1] = argv[1];
             sched_argv[2] = argv[2];
             sched_argv[3] = NULL;
-            execvp(name, sched_argv);  // TODO: Error checking
+            execvp(name, sched_argv);
+            perror("Scheduler exec failed");
+            exit(1);
         } else {
             _exit(0);
         }
