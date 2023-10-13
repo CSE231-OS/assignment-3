@@ -13,6 +13,7 @@
 #include "common.h"
 
 shm_t *shm;
+struct timespec now;
 int create_process_and_run(char **command){
     int status = fork();
     if (status < 0){
@@ -32,9 +33,12 @@ int create_process_and_run(char **command){
                     fprintf(stderr, "Invalid priority\n");
                     exit(1);
                 }
+            } else {
+                exit(1);
             }
             strcpy(shm->command[shm->index], command[1]);
-            shm->priorities[shm->index++] = pr;
+            shm->priorities[shm->index] = pr;
+            shm->submission_time[shm->index++] = now;
             // struct process *process = malloc(sizeof(struct process));
             // strcpy(process->path, command[1]);
             // process->pr = pr;
@@ -89,6 +93,9 @@ void shell_loop()
         command = malloc(256);
         printf("\033[1m\033[33mgroup-28@shell\033[0m:\033[1m\033[35m%s\033[0m$ ", cwd);
         fgets(input, sizeof(char)*MAX_INPUT_LEN, stdin);
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        input[strlen(input) - 1] = '\0';
+        if (input[0] == '\0') continue;
         command = read_user_input(input, command);
         status = launch(command);
         free(command);
@@ -139,7 +146,7 @@ int main(int argc, char **argv)
         fd,                                 /* int __fd */
         0                                   /* off_t __offset */
     );  // TODO: Error checking
-    
+    shm->index = 0;
     int status = fork();
     if (status == 0) {
         char **sched_argv = malloc(sizeof(char *)*4);  // TODO: Error checking

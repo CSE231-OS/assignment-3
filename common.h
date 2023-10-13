@@ -6,6 +6,12 @@
 #define NUMBER_OF_QUEUES 4
 
 struct process {
+    int index;
+    int init_pr;
+    struct timespec prev_exe_time;
+    struct timespec prev_wait_time;
+    double total_exe_time;
+    double total_wait_time;
     int pr;
     int pid;
     char path[MAX_PATH_LEN];
@@ -17,6 +23,7 @@ struct process {
 typedef struct {
     char command[MAX_COMMANDS][MAX_INPUT_LEN];
     int priorities[MAX_COMMANDS];
+    struct timespec submission_time[MAX_COMMANDS];
     int index;
 } shm_t;
 shm_t *shm;

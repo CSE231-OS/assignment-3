@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>        /* For mode constants */
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 #include "common.h"
 #define RUNNING 1
@@ -17,6 +18,9 @@ struct process queue[NUMBER_OF_QUEUES + 1];
 struct process **current;
 int NCPU, TSLICE;
 int rounds_till_reset = RESET_INTERVAL; 
+int process_index = 1;
+struct timespec now;
+struct process history;
 // struct process *new_process(int pr){
 //     struct process *temp;
 //     temp = malloc(sizeof(struct process));
@@ -24,6 +28,57 @@ int rounds_till_reset = RESET_INTERVAL;
 //     temp->next = NULL;
 //     return temp;
 // }
+
+void add_to_history(struct process *process){
+    struct process *temp = history.next;
+    history.next = process;
+    process->next = temp;
+}
+
+void sort_history(){
+    struct process *arr[process_index - 1];
+    struct process *temp = history.next;
+    int i = 0;
+    while (temp != NULL){
+        arr[i++] = temp;
+        temp = temp->next;
+    }
+    if (i == 0) return;
+    int flag;
+    for (int j = 0; j < i - 1; j++){
+        flag = 1;
+        for (int k = 0; k < i - j - 1; k++){
+            if (arr[k]->index > arr[k + 1]->index){
+                temp = arr[k];
+                arr[k] = arr[k + 1];
+                arr[k + 1] = temp;
+                flag = 0;
+            }
+        }
+        if (flag) break;
+    }
+    struct process *temp_head = arr[0];
+    temp = temp_head;
+    for (int j = 1; j < i; j++){
+        temp->next = arr[j];
+        temp = temp->next;
+    }
+    temp->next = NULL;
+    history.next = temp_head;
+}
+
+void display_history(){
+    struct process *curr = history.next;
+    printf("\n");
+    while (curr != NULL){
+        printf("%d) %s\n", curr->index, curr->path);
+        printf("\tPID: %d\n", curr->pid);
+        printf("\tTotal Wait Time: %.3f ms\n", curr->total_wait_time);
+        printf("\tTotal Execution Time: %.3f ms\n", curr->total_exe_time);
+        printf("\n");
+        curr = curr->next;
+    }
+}
 
 void insert_process(struct process *process){
     process->status = RUNNING;
@@ -72,6 +127,7 @@ void wake() {
     // printf("\n-------------\n");
     // printf("Before wake\n");
     // display_queue();
+    clock_gettime(CLOCK_MONOTONIC, &now);
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
         if (process == NULL ) {
@@ -83,6 +139,8 @@ void wake() {
         //     continue;
         // }
         current[i] = process;
+        process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
+        process->prev_exe_time = now;
         // printf("\tWaking %s ", process->path);
         if (process->pid == 0) {
             process->status = RUNNING;
@@ -117,6 +175,11 @@ void enqueue_processes(){
         strcpy(process->path, shm->command[i]);
         process->pr = shm->priorities[i];
         process->pid = 0;
+        process->index = process_index++;
+        process->init_pr = process->pr;
+        process->prev_wait_time = shm->submission_time[i];
+        process->total_exe_time = 0;
+        process->total_wait_time = 0;
         // printf("Initial insert for %s\n", process->path);
         insert_process(process);
     }
@@ -124,12 +187,15 @@ void enqueue_processes(){
 }
 
 void stop_current() {
+    clock_gettime(CLOCK_MONOTONIC, &now);
     for (int i=0; i<NCPU; i++) {
         if (current[i] != NULL && current[i]->status != TERMINATED) {
             // printf("Stopping %s\n", current[i]->path);
             if (current[i]->pr < NUMBER_OF_QUEUES) ++current[i]->pr;
             kill(current[i]->pid, SIGSTOP); // TODO: Error checking
             insert_process(current[i]);
+            current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
+            current[i]->prev_wait_time = now;
             // printf("Inserted %s (%d)\n", current[i]->path, current[i]->pid);
         }
         // if (current[i] != NULL && current[i]->status == TERMINATED) {
@@ -203,6 +269,7 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
         start_round();
     } else if (signum == SIGCHLD) {
         // display_queue();
+        clock_gettime(CLOCK_MONOTONIC, &now);
         int pid = siginfo->si_pid;
         for (int i=0; i<NCPU; i++) {
             if (current[i] == NULL) {
@@ -211,8 +278,14 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
             if (current[i]->pid == pid) {
                 // printf("%s terminated\n", current[i]->path);
                 current[i]->status = TERMINATED;
+                current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
+                add_to_history(current[i]);
             }
         }
+    } else if (signum == SIGINT){
+        sort_history();
+        display_history();
+        exit(0);
     }
 }
 
@@ -229,13 +302,18 @@ int main(int argc, char **argv)
     for (int j = 0; j < NCPU; j++) {
         current[j] = NULL;
     }
+    history.next = NULL;
+    history.index = 0;
+
     struct process *process = malloc(sizeof(struct process));
     strcpy(process->path, "./fib");
+    process->index = process_index++;
     process->pr = 1;
     process->pid = 0;
 
     struct process *process2 = malloc(sizeof(struct process));
     strcpy(process2->path, "./fib2");
+    process2->index = process_index++;
     process2->pr = 1;
     process2->pid = 0;
     insert_process(process);
@@ -246,6 +324,7 @@ int main(int argc, char **argv)
     sa.sa_sigaction = &signal_handler;
     sigaction(SIGALRM, &sa, NULL);
     sigaction(SIGCHLD, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 
     start();
     usleep(1000*50);
