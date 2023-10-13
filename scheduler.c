@@ -28,6 +28,7 @@ struct process history;
 //     temp->next = NULL;
 //     return temp;
 // }
+int debugging = 0;
 
 void add_to_history(struct process *process){
     struct process *temp = history.next;
@@ -180,7 +181,6 @@ void enqueue_processes(){
         process->prev_wait_time = shm->submission_time[i];
         process->total_exe_time = 0;
         process->total_wait_time = 0;
-        // printf("Initial insert for %s\n", process->path);
         insert_process(process);
     }
     shm->index = 0;
@@ -240,13 +240,13 @@ void start_round() {
 
 struct itimerval timer_value;
 void start() {
+    // int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);  // Actual line
     int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
-    if (fd == -1) {
-        // For debugging scheduler alone
-        if (errno == EEXIST) {
-            fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
-            ftruncate(fd, sizeof(shm_t));
-        }
+    debugging = fd != -1;
+    if (!debugging) {
+        fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    } else {
+        ftruncate(fd, sizeof(shm_t));
     }
     shm = mmap(
         NULL,                               /* void *__addr */
@@ -256,6 +256,13 @@ void start() {
         fd,                                 /* int __fd */
         0                                   /* off_t __offset */
     );  // TODO: Error checking
+    if (debugging) {
+        int priorities[2] = {1, 1};
+        char commands[2][MAX_INPUT_LEN] = {"./fib", "./fib2"};
+        memcpy(shm->command, commands, sizeof(commands));
+        memcpy(shm->priorities, priorities, sizeof(priorities));
+        shm->index = 2;
+    }
     timer_value.it_value.tv_sec = TSLICE/1000;
     timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
     timer_value.it_interval.tv_sec = TSLICE/1000;
@@ -283,6 +290,9 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
             }
         }
     } else if (signum == SIGINT){
+        if (debugging) {
+            shm_unlink("/shell-scheduler");
+        }
         sort_history();
         display_history();
         exit(0);
@@ -305,19 +315,6 @@ int main(int argc, char **argv)
     history.next = NULL;
     history.index = 0;
 
-    struct process *process = malloc(sizeof(struct process));
-    strcpy(process->path, "./fib");
-    process->index = process_index++;
-    process->pr = 1;
-    process->pid = 0;
-
-    struct process *process2 = malloc(sizeof(struct process));
-    strcpy(process2->path, "./fib2");
-    process2->index = process_index++;
-    process2->pr = 1;
-    process2->pid = 0;
-    insert_process(process);
-
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
     sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
@@ -327,8 +324,6 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &sa, NULL);
 
     start();
-    usleep(1000*50);
-    insert_process(process2);
     while (1) {
         usleep(TSLICE * 1000);
     }
