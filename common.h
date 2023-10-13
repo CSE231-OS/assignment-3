@@ -1,3 +1,5 @@
+#include <semaphore.h>
+
 #define MAX_COMMANDS 128
 #define MAX_INPUT_LEN 256
 #define MAX_INPUT_WORDS 128
@@ -25,6 +27,7 @@ typedef struct {
     int priorities[MAX_COMMANDS];
     struct timespec submission_time[MAX_COMMANDS];
     int index;
+    sem_t mutex;
 } shm_t;
 shm_t *shm;
 

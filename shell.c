@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>           /* For O_* constants */
+#include <semaphore.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,9 +37,11 @@ int create_process_and_run(char **command){
             } else {
                 exit(1);
             }
+            sem_wait(&shm->mutex);
             strcpy(shm->command[shm->index], command[1]);
             shm->priorities[shm->index] = pr;
             shm->submission_time[shm->index++] = now;
+            sem_post(&shm->mutex);
             // struct process *process = malloc(sizeof(struct process));
             // strcpy(process->path, command[1]);
             // process->pr = pr;
@@ -104,7 +107,6 @@ void shell_loop()
 
 void signal_handler(int signum) {
     if (signum == SIGINT) {
-        shm_unlink("/shell-scheduler");
         exit(0);
     }
 }
@@ -141,8 +143,7 @@ int main(int argc, char **argv)
         printf("TSLICE is too large\n");
         exit(1);
     }
-    
-    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking, cleanup
     ftruncate(fd, sizeof(shm_t));  // TODO: Error checking
     shm = mmap(
         NULL,                               /* void *__addr */
@@ -153,6 +154,7 @@ int main(int argc, char **argv)
         0                                   /* off_t __offset */
     );  // TODO: Error checking
     shm->index = 0;
+    sem_init(&shm->mutex, 1, 1);  // TODO: Cleanup
     int status = fork();
     if (status == 0) {
         status = fork();

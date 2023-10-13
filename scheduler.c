@@ -86,6 +86,7 @@ void display_history(){
 void terminate() {
     sort_history();
     display_history();
+    shm_unlink("/shell-scheduler");
     exit(0);
 }
 
@@ -124,7 +125,10 @@ int no_pending_processes() {
             return 0;
         }
     }
-    return shm->index == 0;
+    sem_wait(&shm->mutex);
+    int empty = shm->index == 0;
+    sem_post(&shm->mutex);
+    return empty;
 }
 
 void display_queue(){
@@ -188,6 +192,7 @@ void wake() {
 shm_t *shm;
 void enqueue_processes(){
     // printf("Enqueue called\n");
+    sem_wait(&shm->mutex);
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
         strcpy(process->path, shm->command[i]);
@@ -201,6 +206,7 @@ void enqueue_processes(){
         insert_process(process);
     }
     shm->index = 0;
+    sem_post(&shm->mutex);
 }
 
 void stop_current() {
@@ -261,7 +267,7 @@ void start_round() {
 struct itimerval timer_value;
 void start() {
     // int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);  // Actual line
-    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking, cleanup
     debugging = fd != -1;
     if (!debugging) {
         fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
@@ -314,9 +320,6 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
         }
         if (BLOCKING_SIGINT && processes_alive == 0 && no_pending_processes()) terminate();
     } else if (signum == SIGINT){
-        if (debugging) {
-            shm_unlink("/shell-scheduler");
-        }
         BLOCKING_SIGINT = 1;
         int processes_alive = 0;
         for (int i=0; i<NCPU; i++) {
