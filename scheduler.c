@@ -251,6 +251,6 @@ int main(int argc, char **argv)
     usleep(1000*50);
     insert_process(process2);
     while (1) {
-        usleep(TSLICE);
+        usleep(TSLICE * 1000);
     }
 }
