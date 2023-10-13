@@ -153,9 +153,9 @@ void wake() {
                 exit(1);
             } else if (status == 0) {
                 char* argv[2] = {process->path, NULL};
-                // fprintf(stderr, "path: %s\n", process->path);
                 execvp(process->path, argv); // TODO: Error checking
-                fprintf(stderr, "Failed exec\n");
+                fprintf(stderr, "Failed exec for path %s\n", process->path);
+                perror("Error");
             } else {
                 // perror("Error");
             }

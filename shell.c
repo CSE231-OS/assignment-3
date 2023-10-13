@@ -76,7 +76,6 @@ char **read_user_input(char *input, char **command){
         ++i;
         word = strtok(NULL, delim);
     }
-    command[i-1][strlen(command[i-1])-1] = '\0';
     command[i] = NULL;
     return command;
 }
@@ -101,6 +100,13 @@ void shell_loop()
         free(command);
         free(input);
     } while (status);
+}
+
+void signal_handler(int signum) {
+    if (signum == SIGINT) {
+        shm_unlink("/shell-scheduler");
+        exit(0);
+    }
 }
 
 int main(int argc, char **argv)
@@ -157,6 +163,10 @@ int main(int argc, char **argv)
         sched_argv[3] = NULL;
         execvp(name, sched_argv);  // TODO: Error checking
     } else if (status > 0) {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(struct sigaction));
+        sa.sa_handler = &signal_handler;
+        sigaction(SIGINT, &sa, NULL);
         shell_loop();
         return 0;
     }
