@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>           /* For O_* constants */
 #include <signal.h>
 #include <stdio.h>
@@ -10,10 +11,12 @@
 #include "common.h"
 #define RUNNING 1
 #define TERMINATED 2
+#define RESET_INTERVAL 3
 
 struct process queue[NUMBER_OF_QUEUES + 1];
 struct process **current;
 int NCPU, TSLICE;
+int rounds_till_reset = RESET_INTERVAL; 
 // struct process *new_process(int pr){
 //     struct process *temp;
 //     temp = malloc(sizeof(struct process));
@@ -68,7 +71,7 @@ void wake() {
     // display_queue();
     // printf("\n-------------\n");
     // printf("Before wake\n");
-    display_queue();
+    // display_queue();
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
         if (process == NULL ) {
@@ -136,17 +139,49 @@ void stop_current() {
     }
 }
 
+void reset_priorities() {
+    for (int i=2; i<=NUMBER_OF_QUEUES; i++) {
+        if (queue[i].next == NULL) continue;
+        if (queue[1].tail != NULL) {
+            queue[1].tail->next = queue[i].next;
+        } else {
+            queue[1].next = queue[i].next;
+        }
+        queue[1].tail = queue[i].tail;
+        struct process *cursor = queue[i].next;
+        while (cursor != NULL) {
+            cursor->pr = 1;
+            cursor = cursor->next;
+        }
+        queue[i].next = NULL;
+        queue[i].tail = NULL;
+    }
+}
+
 void start_round() {
     // printf("Starting round\n");
     enqueue_processes();
     stop_current();
+    if (rounds_till_reset-- == 0) {
+        reset_priorities();
+        rounds_till_reset = RESET_INTERVAL;
+    }
+    // display_queue();
+    // printf("\n");
     wake();
     // printf("Round ended\n");
 }
 
 struct itimerval timer_value;
 void start() {
-    int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+    if (fd == -1) {
+        // For debugging scheduler alone
+        if (errno == EEXIST) {
+            fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO); // TODO: Error checking
+            ftruncate(fd, sizeof(shm_t));
+        }
+    }
     shm = mmap(
         NULL,                               /* void *__addr */
         sizeof(shm_t),                      /* size_t __len */
