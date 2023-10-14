@@ -197,7 +197,6 @@ void wake() {
         current[i] = process;
         process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
         // printf("process->total_wait_time = %.3f\n", process->total_wait_time);
-        process->prev_exe_time = now;
         if (process->pid == 0) {
             process->response_time = (now.tv_sec - process->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - process->arrival_time.tv_nsec) / 1000000.0;
             process->status = RUNNING;
@@ -243,6 +242,7 @@ void enqueue_processes(){
         process->index = process_index++;
         process->init_pr = process->pr;
         clock_gettime(CLOCK_MONOTONIC, &process->arrival_time);
+        process->times_executed = 0;
         process->prev_wait_time = shm->submission_time[i];
         process->submission_time = process->prev_wait_time;
         process->total_exe_time = 0;
@@ -275,7 +275,7 @@ void stop_current() {
             }
             insert_process(current[i]);
             current[i]->turnaround_time = (now.tv_sec - current[i]->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->arrival_time.tv_nsec) / 1000000.0;
-            current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
+            ++current[i]->times_executed;
             current[i]->prev_wait_time = now;
         }
         current[i] = NULL;
@@ -365,7 +365,8 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
             }
             if (current[i]->pid == pid) {
                 current[i]->status = TERMINATED;
-                current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
+                ++current[i]->times_executed;
+                current[i]->total_exe_time = current[i]->times_executed * TSLICE;
                 add_to_history(current[i]);
             } else if (current[i]->status != TERMINATED) {
                 processes_alive++;
