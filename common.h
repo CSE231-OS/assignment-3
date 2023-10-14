@@ -12,6 +12,10 @@ struct process {
     int init_pr;
     struct timespec prev_exe_time;
     struct timespec prev_wait_time;
+    struct timespec arrival_time;
+    struct timespec submission_time;
+    double response_time;
+    double turnaround_time;
     double total_exe_time;
     double total_wait_time;
     int pr;

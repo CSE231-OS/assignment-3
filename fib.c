@@ -8,5 +8,5 @@ int fib(int n){
 
 int main(int argc, char **argv)
 {
-    printf("41: %d\n", fib(42));
+    printf("41: %d\n", fib(41));
 }

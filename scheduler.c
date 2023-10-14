@@ -68,16 +68,34 @@ void display_history(){
     struct process *curr = history.next;
     struct process *temp;
     printf("\nHistory:\n");
+    double average_wait_time = 0, average_exe_time = 0, average_response_time = 0, average_turnaround_time = 0, average_latency = 0;
+    int n = 0;
     while (curr != NULL){
+        n++;
         printf("%d) %s\n", curr->index, curr->path);
         printf("\tPID: %d\n", curr->pid);
-        printf("\tTotal Wait Time: %.3f ms\n", curr->total_wait_time);
-        printf("\tTotal Execution Time: %.3f ms\n", curr->total_exe_time);
+        printf("\tTotal wait time: %.3f ms\n", curr->total_wait_time);
+        printf("\tTotal execution time: %.3f ms\n", curr->total_exe_time);
+        printf("\tResponse time: %.3f ms\n", curr->response_time);
+        printf("\tTurnaround time: %.3f ms\n", curr->turnaround_time);
+        double latency = (curr->arrival_time.tv_sec - curr->submission_time.tv_sec) * 1000.0 + (curr->arrival_time.tv_nsec - curr->submission_time.tv_nsec) / 1000000.0;
+        printf("\tSubmission to arrival latency (ignored): %.3f ms\n", latency);
         printf("\n");
+        average_wait_time += curr->total_wait_time;
+        average_exe_time += curr->total_exe_time;
+        average_response_time += curr->response_time;
+        average_turnaround_time += curr->turnaround_time;
+        average_latency += latency;
         temp = curr;
         curr = curr->next;
         free(temp);
     }
+    printf("Average wait time: %.3f ms\n", average_wait_time / n);
+    printf("Average execution time: %.3f ms\n", average_exe_time / n);
+    printf("Average response time: %.3f ms\n", average_response_time / n);
+    printf("Average turnaround time: %.3f ms\n", average_turnaround_time / n);
+    printf("Average latency: %.3f ms\n", average_latency / n);
+    printf("\n");
 }
 
 void cleanup() {
@@ -176,8 +194,10 @@ void wake() {
         }
         current[i] = process;
         process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
+        // printf("process->total_wait_time = %.3f\n", process->total_wait_time);
         process->prev_exe_time = now;
         if (process->pid == 0) {
+            process->response_time = (now.tv_sec - process->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - process->arrival_time.tv_nsec) / 1000000.0;
             process->status = RUNNING;
             int status = fork();
             process->pid = status;
@@ -219,7 +239,9 @@ void enqueue_processes(){
         process->pid = 0;
         process->index = process_index++;
         process->init_pr = process->pr;
+        clock_gettime(CLOCK_MONOTONIC, &process->arrival_time);
         process->prev_wait_time = shm->submission_time[i];
+        process->submission_time = process->prev_wait_time;
         process->total_exe_time = 0;
         process->total_wait_time = 0;
         insert_process(process);
@@ -249,6 +271,7 @@ void stop_current() {
                 exit(1);
             }
             insert_process(current[i]);
+            current[i]->turnaround_time = (now.tv_sec - current[i]->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->arrival_time.tv_nsec) / 1000000.0;
             current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
             current[i]->prev_wait_time = now;
         }
