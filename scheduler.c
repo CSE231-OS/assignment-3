@@ -74,6 +74,8 @@ void display_history(){
         n++;
         printf("%d) %s\n", curr->index, curr->path);
         printf("\tPID: %d\n", curr->pid);
+        printf("\tInitial priority: %d\n", curr->initial_pr);
+        printf("\tFinal priority: %d\n", curr->pr);
         printf("\tTotal wait time: %.3f ms\n", curr->total_wait_time);
         printf("\tTotal execution time: %.3f ms\n", curr->total_exe_time);
         printf("\tResponse time: %.3f ms\n", curr->response_time);
@@ -236,6 +238,7 @@ void enqueue_processes(){
         }
         strcpy(process->path, shm->command[i]);
         process->pr = shm->priorities[i];
+        process->initial_pr = process->pr;
         process->pid = 0;
         process->index = process_index++;
         process->init_pr = process->pr;

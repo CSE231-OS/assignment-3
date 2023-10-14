@@ -19,6 +19,7 @@ struct process {
     double total_exe_time;
     double total_wait_time;
     int pr;
+    int initial_pr;
     int pid;
     char path[MAX_PATH_LEN];
     int status;
