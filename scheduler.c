@@ -190,7 +190,7 @@ void display_queue(){
         struct process *temp = queue[i].next;
         printf("%d: ", i);
         while (temp != NULL){
-            printf("%s ", temp->path);
+            printf("%d (status=%d)", temp->pid, temp->status);
             temp = temp->next;
         }
         printf("\n");
@@ -203,17 +203,11 @@ void wake() {
         perror("Unable to get clock time");
         exit(1);
     }
-    int fib2_chosen = 0;
     for (int i=0; i<NCPU; i++) {
         struct process *process = delete_process(queue);
         if (process == NULL ) {
             break;
         }
-        if (strcmp(process->path, "./fib2") == 0 && debugging) {
-            fib2_chosen = 1;
-        } // else {
-            // printf("process->path = %s (not ./fib2)\n", process->path);
-        // }
         current[i] = process;
         process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
         process->prev_exe_time = now;
@@ -240,26 +234,16 @@ void wake() {
             }
         }
     }
-    if (debugging) {
-        if (!fib2_chosen) {
-            printf("fib2 will wait\n");
-        } else {
-            printf("fib2 will run\n");
-        }
-    }
 }
 
 shm_t *shm;
 void enqueue_processes(){
-    // printf("Starting wait\n");
     int ret = sem_wait(&shm->mutex);
-    // printf("Wait ended on scheduler\n");
     if (ret == -1) {
         perror("Unable to wait on mutex");
         exit(1);
     }
     clock_gettime(CLOCK_MONOTONIC, &now);
-    // printf("Test\n");
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
         if (process == NULL) {
@@ -267,7 +251,6 @@ void enqueue_processes(){
             exit(1);
         }
         strcpy(process->path, shm->command[i]);
-        printf("Adding %s\n", process->path);
         process->pr = shm->priorities[i];
         process->arrival_time = now;
         process->initial_pr = process->pr;
@@ -333,30 +316,24 @@ void reset_priorities() {
 }
 
 void start_round() {
-    // printf("Starting round\n");
+    // display_queue();
     enqueue_processes();
     stop_current();
-    if (debugging) {
-        display_queue();
+    if (rounds_till_reset-- == 0) {
+        reset_priorities();
+        rounds_till_reset = RESET_INTERVAL;
     }
-    // if (rounds_till_reset-- == 0) {
-    //     reset_priorities();
-    //     rounds_till_reset = RESET_INTERVAL;
-    // }
     wake();
-    if (debugging) {
-        printf("\n");
-    }
 }
 
 struct itimerval timer_value;
 void start() {
-    // printf("Started\n");
+    printf("Started\n");
     shm_unlink("/shell-scheduler");
     int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO);
     /*      DEBUGGING                              ^^^^^^^^^^^^^^^^     */
-    debugging = 1;
-    // printf("debugging=%d\n", debugging);
+    debugging = fd != -1;
+    printf("debugging=%d\n", debugging);
     if (!debugging) {
         fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
     } else {
@@ -415,9 +392,6 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
         for (int i=0; i<NCPU; i++) {
             if (current[i] == NULL) {
                 break;
-            }
-            if (strcmp(current[i]->path, "./fib2") == 0 && debugging ){
-                printf("fib2 terminated\n");
             }
             if (current[i]->pid == pid) {
                 current[i]->status = TERMINATED;
@@ -507,25 +481,12 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    struct process *process1 = _new_process("./fib3", 1);
+
+    struct process *process1 = _new_process("./fib", 1);
     insert_process(process1);
-    struct process *process2 = _new_process("./fib4", 1);
-    insert_process(process2);
-    struct process *process3 = _new_process("./fib5", 1);
-    insert_process(process3);
-    struct process *process4 = _new_process("./fib6", 1);
-    insert_process(process4);
-    struct process *process5 = _new_process("./fib7", 1);
-    insert_process(process5);
-    struct process *process6 = _new_process("./fib2", 4);
-    insert_process(process6);
     start();
-    // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0});
-    
-    // struct process *process1 = _new_process("./fib", 1);
-    // insert_process(process1);
-    // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
-    // insert_process(process2);
+    _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
+    insert_process(process2);
 
     while (1) {
         ret = usleep(TSLICE * 1000);
