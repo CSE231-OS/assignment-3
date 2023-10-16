@@ -190,7 +190,7 @@ void display_queue(){
         struct process *temp = queue[i].next;
         printf("%d: ", i);
         while (temp != NULL){
-            printf("%d (status=%d)", temp->pid, temp->status);
+            printf("%s ", temp->path);
             temp = temp->next;
         }
         printf("\n");
@@ -316,13 +316,14 @@ void reset_priorities() {
 }
 
 void start_round() {
-    // display_queue();
+    display_queue();
+    printf("\n");
     enqueue_processes();
     stop_current();
-    if (rounds_till_reset-- == 0) {
-        reset_priorities();
-        rounds_till_reset = RESET_INTERVAL;
-    }
+    // if (rounds_till_reset-- == 0) {
+    //     reset_priorities();
+    //     rounds_till_reset = RESET_INTERVAL;
+    // }
     wake();
 }
 
@@ -481,12 +482,25 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-
-    struct process *process1 = _new_process("./fib", 1);
+    struct process *process1 = _new_process("./fib3", 1);
     insert_process(process1);
-    start();
-    _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
+    struct process *process2 = _new_process("./fib3", 1);
     insert_process(process2);
+    struct process *process3 = _new_process("./fib3", 1);
+    insert_process(process3);
+    struct process *process4 = _new_process("./fib3", 1);
+    insert_process(process4);
+    struct process *process5 = _new_process("./fib3", 1);
+    insert_process(process5);
+    struct process *process6 = _new_process("./fib2", 4);
+    insert_process(process6);
+    start();
+    // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0});
+    
+    // struct process *process1 = _new_process("./fib", 1);
+    // insert_process(process1);
+    // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
+    // insert_process(process2);
 
     while (1) {
         ret = usleep(TSLICE * 1000);
