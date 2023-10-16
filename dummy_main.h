@@ -11,6 +11,9 @@ int main(int argc, char **argv)
     struct sigaction sig;
     memset(&sig, 0, sizeof(struct sigaction));
     sig.sa_handler = my_handler;
+    // SIGINT to parent processes propogate to the child processes by default
+    // To avoid a SIGINT to the shell propogating to this process, we overwrite
+    // the default handler with a dummy handler. 
     sigaction(SIGINT, &sig, NULL);
     int ret = dummy_main(argc, argv);
     return ret;

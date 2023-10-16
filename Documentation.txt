@@ -1,0 +1,55 @@
+Contributions:
+Ankur: Implementing IPC using shared memory and semaphores, creating layout of scheduler for executing processes until they naturally terminate using the proper signals.
+Saurav: Implementing the priority queue required for providing process to scheduler as well as displaying history after the shell terminates.
+
+Repository Link: https://github.com/best-os-group/assignment-3
+
+Working of Scheduler:
+To start executing the shell, it takes the number of CPUs and the TSLICE (in ms) for the program execution as its input.
+The Shell which was implemented in the previous assignment receives input from the user in the form of:
+"submit ./a.out x", where x is the priority the user wants to assign the executable ranging from values 1-4 (with 1 being the maximum priority). The string and priority value is communicated to the scheduler via a shared memory object.
+
+The scheduler, which is a grandchild of the shell and acts as a daemon, receives this string and priority value and enqueues it in the priority queue. Picking at most N processes, where N is the number of CPUs, the scheduler allocates each process from the top of the priority queue to one of the CPUs which executes for TSLICE time. After TSLICE time, these process are stopped and enqueued into the priority queue again with decreased priority. The scheduler again picks at most N processes and the process repeats again. After a certain amount of time, all processes are moved to the maximum priority to prevent starvation. In case a process terminates, it is not enqueued into the priority queue again and is added to the history.
+
+In case the shell is terminated while a process is running, the scheduler only terminates after all the processes that are to be executed have been terminated. This is done by handling the SIGINT signal in the dummy_main file, which has to be included in every file that the user wishes the scheduler to execute.
+
+ADVANCED STATISTICS:
+
+To Demonstrate the Effect on the Job Scheduling of Each Job due to the respective Priorities assigned to them by the user:
+
+Five fib(45) files with priority one are enqueued into the scheduler's priority queue, after which a fib(42) file is inserted into the queue. The priority of the fib(42) file is varied to measure the difference in the waiting time of the process, while the priority of the inserted fib(45) files is always one. For each of these 4 cases, the scheduler is run with 2 CPUs and a TSLICE of 500ms.
+
+
+Priority 1:
+        Initial priority: 1
+        Final priority: 3
+        Total wait time: 3000.255 ms
+        Turnaround/Execution/Completion time: 4328.916 ms
+        Total CPU time: 1328.661 ms
+        Response time: 1000.248 ms
+
+Priority 2:
+        Initial priority: 2
+        Final priority: 4
+        Total wait time: 3000.342 ms
+        Turnaround/Execution/Completion time: 4400.747 ms
+        Total CPU time: 1400.405 ms
+        Response time: 1000.369 ms
+
+Priority 3:
+        Initial priority: 3
+        Final priority: 1
+        Total wait time: 4500.353 ms
+        Turnaround/Execution/Completion time: 5889.565 ms
+        Total CPU time: 1389.212 ms
+        Response time: 2500.348 ms
+
+Priority 4:
+        Initial priority: 4
+        Final priority: 2
+        Total wait time: 5500.309 ms
+        Turnaround/Execution/Completion time: 6878.726 ms
+        Total CPU time: 1378.417 ms
+        Response time: 3500.278 ms
+
+It can be clearly seen that as priority decreases, i.e. goes from 1 to 4, the total wait time as well as the response time of the process increases significantly, which consequently increases the completion time of the process.

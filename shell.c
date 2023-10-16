@@ -37,15 +37,18 @@ int create_process_and_run(char **command){
             } else {
                 exit(1);
             }
+            // Critical section boundary
             int ret = sem_wait(&shm->mutex);
             if (ret == -1) {
                 perror("Unable to wait for semaphore");
                 exit(1);
             }
+            // Add the process information to the shared memory for the scheduler to later consume
             strcpy(shm->command[shm->index], command[1]);
             shm->priorities[shm->index] = pr;
             shm->submission_time[shm->index++] = now;
             ret = sem_post(&shm->mutex);
+            // Critical section boundary
             if (ret == -1) {
                 perror("Unable to post to semaphore");
                 exit(1);
@@ -157,6 +160,7 @@ int main(int argc, char **argv)
         printf("TSLICE is too large\n");
         exit(1);
     }
+    // The shared memory is the only way for the shell and scheduler to communicate
     int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
     if (fd == -1) {
         perror("Unable to open shared memory");
@@ -214,7 +218,7 @@ int main(int argc, char **argv)
         struct sigaction sa;
         memset(&sa, 0, sizeof(struct sigaction));
         sa.sa_handler = &signal_handler;
-        sigaction(SIGINT, &sa, NULL);
+        sigaction(SIGINT, &sa, NULL);  // To ensure cleanup
         shell_loop();
         return 0;
     }

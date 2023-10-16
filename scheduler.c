@@ -26,17 +26,6 @@ struct process history;
 int BLOCKING_SIGINT = 0;
 int ALLOW_TERMINATION = 0;
 
-struct timespec add(struct timespec a, struct timespec b) {
-    struct timespec result;
-    result.tv_sec = a.tv_sec + b.tv_sec;
-    result.tv_nsec = a.tv_nsec + b.tv_nsec;
-    if (result.tv_nsec >= 1000000000) {
-        result.tv_sec++;
-        result.tv_nsec -= 1000000000;
-    }
-    return result;
-}
-
 void add_to_history(struct process *process){
     struct process *temp = history.next;
     history.next = process;
@@ -166,6 +155,7 @@ struct process *delete_process(){
 }
 
 int no_pending_processes() {
+    // The queue must be empty, the processes must be terminated, and the shared memory must be empty
     for (int i=1; i<=NUMBER_OF_QUEUES; i++) {
         if (queue[i].next != NULL) {
             return 0;
@@ -209,9 +199,11 @@ void wake() {
             break;
         }
         current[i] = process;
+        // Update time measurements
         process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
         process->prev_exe_time = now;
         if (process->pid == 0) {
+            // Process is entering first time
             process->response_time = (now.tv_sec - process->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - process->arrival_time.tv_nsec) / 1000000.0;
             process->status = RUNNING;
             int status = fork();
@@ -226,6 +218,7 @@ void wake() {
                 perror("Error");
             }
         } else {
+            // Process has paused once. Must be resumed.
             int ret = kill(process->pid, SIGCONT);
             if (ret == -1) {
                 fprintf(stderr, "Unable to continue child process %s. ", process->path);
@@ -238,12 +231,15 @@ void wake() {
 
 shm_t *shm;
 void enqueue_processes(){
+    // Critical section boundary
     int ret = sem_wait(&shm->mutex);
     if (ret == -1) {
         perror("Unable to wait on mutex");
         exit(1);
     }
     clock_gettime(CLOCK_MONOTONIC, &now);
+    // The shared memory contains a queue of strings (command names) and priorities that is emptied at every TSLICE.
+    // The queue is then emptied and the scheduler creates the corresponding processes.
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
         if (process == NULL) {
@@ -263,6 +259,7 @@ void enqueue_processes(){
         insert_process(process);
     }
     shm->index = 0;
+    // Critical section boundary
     ret = sem_post(&shm->mutex);
     if (ret == -1) {
         perror("Unable to post on mutex");
@@ -293,11 +290,16 @@ void stop_current() {
         }
         current[i] = NULL;
     }
+    // There should be no processes alive in the current running set of processes, the queue must be empty, and the
+    // shared memory must be empty for the scheduler to terminate. BLOCKING_SIGINT suggests the shell wants the scheduler
+    // to terminate ASAP.
     if (BLOCKING_SIGINT && processes_interrupted == 0 && no_pending_processes()) terminate();
 }
 
 void reset_priorities() {
+    // Priority boost
     for (int i=2; i<=NUMBER_OF_QUEUES; i++) {
+        // Relative order in destination queues is preserved while shifting to highest priority
         if (queue[i].next == NULL) continue;
         if (queue[1].tail != NULL) {
             queue[1].tail->next = queue[i].next;
@@ -368,6 +370,8 @@ void start() {
     // if (debugging) {
         // sem_init(&shm->mutex, 1, 1);
     // }
+    // The alarm timer is initiated when the scheduler is first spawned
+    // It runs every TSLICE milliseconds by itself
     timer_value.it_value.tv_sec = TSLICE/1000;
     timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
     timer_value.it_interval.tv_sec = TSLICE/1000;
@@ -384,6 +388,7 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
     if (signum == SIGALRM) {
         start_round();
     } else if (signum == SIGCHLD) {
+        // Since there was a SA_NOCLDSTOP flag, this signal is only sent when a child process terminates
         int ret = clock_gettime(CLOCK_MONOTONIC, &now);
         if (ret == -1) {
             perror("Unable to get clock time");
@@ -404,43 +409,48 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
                 processes_alive++;
             }
         }
+        // There should be no processes alive in the current running set of processes, the queue must be empty, and the
+        // shared memory must be empty for the scheduler to terminate. BLOCKING_SIGINT suggests the shell wants the scheduler
+        // to terminate ASAP.
         if (BLOCKING_SIGINT && processes_alive == 0 && no_pending_processes()) terminate();
     } else if (signum == SIGINT){
+        // Indicate that the shell wants the scheduler to terminate ASAP
         BLOCKING_SIGINT = 1;
         int processes_alive = 0;
         for (int i=0; i<NCPU; i++) {
             if (current[i] == NULL) continue;
             if (current[i]->status != TERMINATED) processes_alive++;
         }
+        // In case it's okay to immediately terminate, do so instead of waiting for some other termination path
         if (processes_alive == 0 && no_pending_processes()) terminate();
     }
 }
 /*                  DEBUGGING                      */
-struct process *_new_process(char *name, int pr) {
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    struct process *process = malloc(sizeof(struct process));
-    strcpy(process->path, name);
-    process->pr = pr;
-    process->arrival_time = now;
-    process->initial_pr = process->pr;
-    process->pid = 0;
-    process->index = process_index++;
-    process->prev_wait_time = now;
-    process->submission_time = now;
-    process->total_exe_time = 0;
-    process->total_wait_time = 0;
-    return process;
-}
+// struct process *_new_process(char *name, int pr) {
+//     clock_gettime(CLOCK_MONOTONIC, &now);
+//     struct process *process = malloc(sizeof(struct process));
+//     strcpy(process->path, name);
+//     process->pr = pr;
+//     process->arrival_time = now;
+//     process->initial_pr = process->pr;
+//     process->pid = 0;
+//     process->index = process_index++;
+//     process->prev_wait_time = now;
+//     process->submission_time = now;
+//     process->total_exe_time = 0;
+//     process->total_wait_time = 0;
+//     return process;
+// }
 
-void _sleep(struct timespec t) {
-    int ret;
-    while (1) {
-        ret = nanosleep(&t, &t);
-        if (ret == 0) {
-            break;
-        }
-    }
-}
+// void _sleep(struct timespec t) {
+//     int ret;
+//     while (1) {
+//         ret = nanosleep(&t, &t);
+//         if (ret == 0) {
+//             break;
+//         }
+//     }
+// }
 /*                                              */
 
 int main(int argc, char **argv)
@@ -465,7 +475,9 @@ int main(int argc, char **argv)
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
-    sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO; 
+    // SA_NOCLDSTOP ensures that SIGCHLD is only sent when a child process terminates
+    // SA_SIGINFO allows immediate retrieval of the source's PID
     sa.sa_sigaction = &signal_handler;
     int ret = sigaction(SIGALRM, &sa, NULL);
     if (ret == -1) {
@@ -490,8 +502,11 @@ int main(int argc, char **argv)
     // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
     // insert_process(process2);
 
+    // The scheduler has to stay alive to receiving the appropriate signals
     while (1) {
         ret = usleep(TSLICE * 1000);
+        // Catching signals interrupts usleep, so we restart the sleep from the loop
+        // unless the error is not due to a signal interruption, in which case we exit
         if (ret == -1 && errno != EINTR) {
             perror("Unable to sleep:");
             exit(1);
