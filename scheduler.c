@@ -251,15 +251,15 @@ void wake() {
 
 shm_t *shm;
 void enqueue_processes(){
-    printf("Starting wait\n");
+    // printf("Starting wait\n");
     int ret = sem_wait(&shm->mutex);
-    printf("Wait ended on scheduler\n");
+    // printf("Wait ended on scheduler\n");
     if (ret == -1) {
         perror("Unable to wait on mutex");
         exit(1);
     }
     clock_gettime(CLOCK_MONOTONIC, &now);
-    printf("Test\n");
+    // printf("Test\n");
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
         if (process == NULL) {
@@ -333,7 +333,7 @@ void reset_priorities() {
 }
 
 void start_round() {
-    printf("Starting round\n");
+    // printf("Starting round\n");
     enqueue_processes();
     stop_current();
     if (debugging) {
@@ -352,9 +352,10 @@ void start_round() {
 struct itimerval timer_value;
 void start() {
     // printf("Started\n");
+    shm_unlink("/shell-scheduler");
     int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO);
     /*      DEBUGGING                              ^^^^^^^^^^^^^^^^     */
-    debugging = 0;
+    debugging = 1;
     // printf("debugging=%d\n", debugging);
     if (!debugging) {
         fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -506,18 +507,18 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    // struct process *process1 = _new_process("./fib3", 1);
-    // insert_process(process1);
-    // struct process *process2 = _new_process("./fib3", 1);
-    // insert_process(process2);
-    // struct process *process3 = _new_process("./fib3", 1);
-    // insert_process(process3);
-    // struct process *process4 = _new_process("./fib3", 1);
-    // insert_process(process4);
-    // struct process *process5 = _new_process("./fib3", 1);
-    // insert_process(process5);
-    // struct process *process6 = _new_process("./fib2", 4);
-    // insert_process(process6);
+    struct process *process1 = _new_process("./fib3", 1);
+    insert_process(process1);
+    struct process *process2 = _new_process("./fib4", 1);
+    insert_process(process2);
+    struct process *process3 = _new_process("./fib5", 1);
+    insert_process(process3);
+    struct process *process4 = _new_process("./fib6", 1);
+    insert_process(process4);
+    struct process *process5 = _new_process("./fib7", 1);
+    insert_process(process5);
+    struct process *process6 = _new_process("./fib2", 4);
+    insert_process(process6);
     start();
     // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0});
     

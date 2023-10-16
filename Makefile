@@ -1,4 +1,4 @@
-user_progs := fib fib2 fib3
+user_progs := fib fib2 fib3 fib4 fib5 fib6 fib7
 CC = gcc
 
 default: shell scheduler $(user_progs)
