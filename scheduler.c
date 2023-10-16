@@ -26,6 +26,17 @@ int debugging = 0;
 int BLOCKING_SIGINT = 0;
 int ALLOW_TERMINATION = 0;
 
+struct timespec add(struct timespec a, struct timespec b) {
+    struct timespec result;
+    result.tv_sec = a.tv_sec + b.tv_sec;
+    result.tv_nsec = a.tv_nsec + b.tv_nsec;
+    if (result.tv_nsec >= 1000000000) {
+        result.tv_sec++;
+        result.tv_nsec -= 1000000000;
+    }
+    return result;
+}
+
 void add_to_history(struct process *process){
     struct process *temp = history.next;
     history.next = process;
@@ -74,6 +85,9 @@ void display_history(){
         n++;
         printf("%d) %s\n", curr->index, curr->path);
         printf("\tPID: %d\n", curr->pid);
+        if (debugging) {
+            printf("\tSubmission time: %.3f ms\n", curr->submission_time.tv_sec * 1000.0 + curr->submission_time.tv_nsec/1000000.0);
+        }
         printf("\tInitial priority: %d\n", curr->initial_pr);
         printf("\tFinal priority: %d\n", curr->pr);
         printf("\tTotal wait time: %.3f ms\n", curr->total_wait_time);
@@ -302,6 +316,7 @@ void reset_priorities() {
 }
 
 void start_round() {
+    // display_queue();
     enqueue_processes();
     stop_current();
     if (rounds_till_reset-- == 0) {
@@ -313,11 +328,23 @@ void start_round() {
 
 struct itimerval timer_value;
 void start() {
-    int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-    if (fd == -1) {
-        perror("Scheduler unable to open shared memory");
-        exit(1);
+    printf("Started\n");
+    shm_unlink("/shell-scheduler");
+    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO);
+    /*      DEBUGGING                              ^^^^^^^^^^^^^^^^     */
+    debugging = fd != -1;
+    printf("debugging=%d\n", debugging);
+    if (!debugging) {
+        fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+    } else {
+        printf("DEBUGGING\n\n");
+        ftruncate(fd, sizeof(shm_t));
     }
+    /*                      */
+    // if (fd == -1) {
+    //     perror("Scheduler unable to open shared memory");
+    //     exit(1);
+    // }
     shm = mmap(
         NULL,                               /* void *__addr */
         sizeof(shm_t),                      /* size_t __len */
@@ -326,6 +353,7 @@ void start() {
         fd,                                 /* int __fd */
         0                                   /* off_t __offset */
     );
+    /*                      */
     if (shm == MAP_FAILED) {
         perror("Scheduler unable to map shared memory");
         exit(1);
@@ -334,6 +362,9 @@ void start() {
     if (ret == -1) {
         perror("Scheduler unable to close shared memory fd");
         exit(1);
+    }
+    if (debugging) {
+        sem_init(&shm->mutex, 1, 1);
     }
     timer_value.it_value.tv_sec = TSLICE/1000;
     timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
@@ -382,6 +413,33 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
         if (processes_alive == 0 && no_pending_processes()) terminate();
     }
 }
+/*                  DEBUGGING                      */
+struct process *_new_process(char *name, int pr) {
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    struct process *process = malloc(sizeof(struct process));
+    strcpy(process->path, name);
+    process->pr = pr;
+    process->arrival_time = now;
+    process->initial_pr = process->pr;
+    process->pid = 0;
+    process->index = process_index++;
+    process->prev_wait_time = now;
+    process->submission_time = now;
+    process->total_exe_time = 0;
+    process->total_wait_time = 0;
+    return process;
+}
+
+void _sleep(struct timespec t) {
+    int ret;
+    while (1) {
+        ret = nanosleep(&t, &t);
+        if (ret == 0) {
+            break;
+        }
+    }
+}
+/*                                              */
 
 int main(int argc, char **argv)
 {
@@ -401,6 +459,7 @@ int main(int argc, char **argv)
     }
     history.next = NULL;
     history.index = 0;
+
 
     struct sigaction sa;
     memset(&sa, 0, sizeof(struct sigaction));
@@ -422,7 +481,13 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+
+    struct process *process1 = _new_process("./fib", 1);
+    insert_process(process1);
     start();
+    _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
+    insert_process(process2);
+
     while (1) {
         ret = usleep(TSLICE * 1000);
         if (ret == -1 && errno != EINTR) {
