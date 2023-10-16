@@ -16,17 +16,20 @@
 shm_t *shm;
 struct timespec now;
 int create_process_and_run(char **command){
+    // Creates a new child process that is used to run the user command
     int status = fork();
     if (status < 0){
         perror("Failed fork");
         exit(0);
     } else if (status == 0){
+        // Checks for the "submit" command
         if (strcmp(command[0], "submit") == 0){
             int pr = -1;
             if (command[1] == NULL) {
                 printf("Usage: %s <Executable>\n", command[0]);
                 return -1;
             } else if (command[2] == NULL) {
+                // Assigns priority 1 to processes in case priority is not defined by user
                 pr = 1;
             } else if (command[3] == NULL) {
                 pr = atoi(command[2]);
@@ -134,6 +137,8 @@ int main(int argc, char **argv)
         printf("Usage: %s <NCPU> <TSLICE (ms)> \n",argv[0]);
         exit(1);
     }
+
+    // Error checking for CPUs inputted
     int NCPU = (int) strtoul(argv[1], NULL, 10);
     if (NCPU == 0) {
         if (errno == EINVAL) {
@@ -147,6 +152,8 @@ int main(int argc, char **argv)
         printf("NCPU is too large\n");
         exit(1);
     }
+
+    // Error checking for TSLICE inputted
     int TSLICE = (int) strtoul(argv[2], NULL, 10);
     if (TSLICE == 0) {
         if (errno == EINVAL) {
@@ -196,6 +203,7 @@ int main(int argc, char **argv)
     }
     int status = fork();
     if (status == 0) {
+        // For launching the scheduler process from the shell as a background process
         status = fork();
         if (status == 0) {
             char **sched_argv = malloc(sizeof(char *)*4);

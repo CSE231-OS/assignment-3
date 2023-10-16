@@ -33,6 +33,7 @@ void add_to_history(struct process *process){
 }
 
 void sort_history(){
+    // Sorting history according to the sequence the processes arrived in
     struct process *arr[process_index - 1];
     struct process *temp = history.next;
     int i = 0;
@@ -104,6 +105,7 @@ void display_history(){
 }
 
 void cleanup() {
+    // Cleaning up the shared memory object and semaphores when the scheduler has to be terminated
     int ret = munmap(shm, sizeof(shm_t));
     if (ret == -1) {
         perror("Unable to unmap shared memory");
@@ -142,7 +144,7 @@ void insert_process(struct process *process){
 }
 
 struct process *delete_process(){
-    // printf(">> Deleting\n");
+    // Dequeues and returns the process from the top of the priority queue in accordance with FIFO method
     for (int i = 1; i <= NUMBER_OF_QUEUES; i++){
         if (queue[i].next == NULL) continue;
         struct process *temp = queue[i].next;
@@ -188,6 +190,7 @@ void display_queue(){
 }
 
 void wake() {
+    // Retrieves processes from priority queue and then assigns them to a CPU and starts/resumes their execution
     int ret = clock_gettime(CLOCK_MONOTONIC, &now);
     if (ret == -1) {
         perror("Unable to get clock time");
@@ -268,6 +271,8 @@ void enqueue_processes(){
 }
 
 void stop_current() {
+    // At the end of every TSLICE, every process assigned to a process is stopped and is inserted into the priority
+    // queue again, so that it can be resumed in the next round of job scheduling
     int ret = clock_gettime(CLOCK_MONOTONIC, &now);
     if (ret == -1) {
         perror("Unable to get clock time");
@@ -297,7 +302,7 @@ void stop_current() {
 }
 
 void reset_priorities() {
-    // Priority boost
+    // Priority boost which moves all processes to the top-most queue after a certain amount of TSLICEs
     for (int i=2; i<=NUMBER_OF_QUEUES; i++) {
         // Relative order in destination queues is preserved while shifting to highest priority
         if (queue[i].next == NULL) continue;
@@ -318,7 +323,6 @@ void reset_priorities() {
 }
 
 void start_round() {
-    // display_queue();
     enqueue_processes();
     stop_current();
     if (rounds_till_reset-- == 0) {
@@ -349,6 +353,8 @@ void start() {
     //     perror("Scheduler unable to open shared memory");
     //     exit(1);
     // }
+
+    // Mapping shared memory to the scheduler's address space
     shm = mmap(
         NULL,                               /* void *__addr */
         sizeof(shm_t),                      /* size_t __len */
@@ -370,6 +376,7 @@ void start() {
     // if (debugging) {
         // sem_init(&shm->mutex, 1, 1);
     // }
+
     // The alarm timer is initiated when the scheduler is first spawned
     // It runs every TSLICE milliseconds by itself
     timer_value.it_value.tv_sec = TSLICE/1000;
@@ -386,6 +393,7 @@ void start() {
 
 void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
     if (signum == SIGALRM) {
+        // The scheduling process is started again after SIGALRM is sent at the end of every TSLICE
         start_round();
     } else if (signum == SIGCHLD) {
         // Since there was a SA_NOCLDSTOP flag, this signal is only sent when a child process terminates
