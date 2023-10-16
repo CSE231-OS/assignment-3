@@ -22,7 +22,7 @@ int process_index = 1;
 struct timespec now;
 struct process history;
 
-int debugging = 0;
+// int debugging = 0;
 int BLOCKING_SIGINT = 0;
 int ALLOW_TERMINATION = 0;
 
@@ -85,9 +85,9 @@ void display_history(){
         n++;
         printf("%d) %s\n", curr->index, curr->path);
         printf("\tPID: %d\n", curr->pid);
-        if (debugging) {
-            printf("\tSubmission time: %.3f ms\n", curr->submission_time.tv_sec * 1000.0 + curr->submission_time.tv_nsec/1000000.0);
-        }
+        // if (debugging) {
+            // printf("\tSubmission time: %.3f ms\n", curr->submission_time.tv_sec * 1000.0 + curr->submission_time.tv_nsec/1000000.0);
+        // }
         printf("\tInitial priority: %d\n", curr->initial_pr);
         printf("\tFinal priority: %d\n", curr->pr);
         printf("\tTotal wait time: %.3f ms\n", curr->total_wait_time);
@@ -328,18 +328,20 @@ void start_round() {
 
 struct itimerval timer_value;
 void start() {
-    printf("Started\n");
-    shm_unlink("/shell-scheduler");
-    int fd = shm_open("/shell-scheduler", O_RDWR | O_CREAT | O_EXCL, S_IRWXU | S_IRWXG | S_IRWXO);
-    /*      DEBUGGING                              ^^^^^^^^^^^^^^^^     */
-    debugging = fd != -1;
-    printf("debugging=%d\n", debugging);
-    if (!debugging) {
-        fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-    } else {
-        printf("DEBUGGING\n\n");
-        ftruncate(fd, sizeof(shm_t));
+    int fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+    if (fd == -1) {
+        perror("Scheduler unable to open shared memory");
+        exit(1);
     }
+    /*      DEBUGGING                              ^^^^^^^^^^^^^^^^     */
+    // debugging = fd != -1;
+    // printf("debugging=%d\n", debugging);
+    // if (!debugging) {
+    //     fd = shm_open("/shell-scheduler", O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+    // } else {
+    //     printf("DEBUGGING\n\n");
+    //     ftruncate(fd, sizeof(shm_t));
+    // }
     /*                      */
     // if (fd == -1) {
     //     perror("Scheduler unable to open shared memory");
@@ -363,9 +365,9 @@ void start() {
         perror("Scheduler unable to close shared memory fd");
         exit(1);
     }
-    if (debugging) {
-        sem_init(&shm->mutex, 1, 1);
-    }
+    // if (debugging) {
+        // sem_init(&shm->mutex, 1, 1);
+    // }
     timer_value.it_value.tv_sec = TSLICE/1000;
     timer_value.it_value.tv_usec = TSLICE%1000 * 1000;
     timer_value.it_interval.tv_sec = TSLICE/1000;
@@ -482,11 +484,11 @@ int main(int argc, char **argv)
     }
 
 
-    struct process *process1 = _new_process("./fib", 1);
-    insert_process(process1);
+    // struct process *process1 = _new_process("./fib", 1);
+    // insert_process(process1);
     start();
-    _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
-    insert_process(process2);
+    // _sleep((struct timespec) {.tv_sec = 1, .tv_nsec = 0}); struct process *process2 = _new_process("./fib2", 2);
+    // insert_process(process2);
 
     while (1) {
         ret = usleep(TSLICE * 1000);
