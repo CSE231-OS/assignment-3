@@ -37,7 +37,9 @@ int create_process_and_run(char **command){
             } else {
                 exit(1);
             }
+            printf("Waiting on shell\n");
             int ret = sem_wait(&shm->mutex);
+            printf("Starting on shell\n");
             if (ret == -1) {
                 perror("Unable to wait for semaphore");
                 exit(1);
@@ -46,6 +48,7 @@ int create_process_and_run(char **command){
             shm->priorities[shm->index] = pr;
             shm->submission_time[shm->index++] = now;
             ret = sem_post(&shm->mutex);
+            printf("Posted\n");
             if (ret == -1) {
                 perror("Unable to post to semaphore");
                 exit(1);
