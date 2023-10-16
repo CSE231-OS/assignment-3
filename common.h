@@ -9,8 +9,7 @@
 
 struct process {
     int index;
-    int init_pr;
-    int times_executed;
+    struct timespec prev_exe_time;
     struct timespec prev_wait_time;
     struct timespec arrival_time;
     struct timespec submission_time;

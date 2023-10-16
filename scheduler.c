@@ -12,7 +12,7 @@
 #include "common.h"
 #define RUNNING 1
 #define TERMINATED 2
-#define RESET_INTERVAL 3
+#define RESET_INTERVAL 5
 
 struct process queue[NUMBER_OF_QUEUES + 1];
 struct process **current;
@@ -77,11 +77,11 @@ void display_history(){
         printf("\tInitial priority: %d\n", curr->initial_pr);
         printf("\tFinal priority: %d\n", curr->pr);
         printf("\tTotal wait time: %.3f ms\n", curr->total_wait_time);
-        printf("\tTotal execution time: %.3f ms\n", curr->total_exe_time);
+        printf("\tTurnaround/Execution/Completion time: %.3f ms\n", curr->turnaround_time);
+        printf("\tTotal CPU time: %.3f ms\n", curr->total_exe_time);
         printf("\tResponse time: %.3f ms\n", curr->response_time);
-        printf("\tTurnaround time: %.3f ms\n", curr->turnaround_time);
         double latency = (curr->arrival_time.tv_sec - curr->submission_time.tv_sec) * 1000.0 + (curr->arrival_time.tv_nsec - curr->submission_time.tv_nsec) / 1000000.0;
-        printf("\tSubmission to arrival latency (ignored): %.3f ms\n", latency);
+        printf("\tSubmission to arrival latency (included): %.3f ms\n", latency);
         printf("\n");
         average_wait_time += curr->total_wait_time;
         average_exe_time += curr->total_exe_time;
@@ -196,7 +196,7 @@ void wake() {
         }
         current[i] = process;
         process->total_wait_time += (now.tv_sec - process->prev_wait_time.tv_sec) * 1000.0 + (now.tv_nsec - process->prev_wait_time.tv_nsec) / 1000000.0;
-        // printf("process->total_wait_time = %.3f\n", process->total_wait_time);
+        process->prev_exe_time = now;
         if (process->pid == 0) {
             process->response_time = (now.tv_sec - process->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - process->arrival_time.tv_nsec) / 1000000.0;
             process->status = RUNNING;
@@ -229,6 +229,7 @@ void enqueue_processes(){
         perror("Unable to wait on mutex");
         exit(1);
     }
+    clock_gettime(CLOCK_MONOTONIC, &now);
     for (int i = 0; i < shm->index; i++){
         struct process *process = malloc(sizeof(struct process));
         if (process == NULL) {
@@ -237,12 +238,10 @@ void enqueue_processes(){
         }
         strcpy(process->path, shm->command[i]);
         process->pr = shm->priorities[i];
+        process->arrival_time = now;
         process->initial_pr = process->pr;
         process->pid = 0;
         process->index = process_index++;
-        process->init_pr = process->pr;
-        clock_gettime(CLOCK_MONOTONIC, &process->arrival_time);
-        process->times_executed = 0;
         process->prev_wait_time = shm->submission_time[i];
         process->submission_time = process->prev_wait_time;
         process->total_exe_time = 0;
@@ -274,8 +273,8 @@ void stop_current() {
                 exit(1);
             }
             insert_process(current[i]);
-            current[i]->turnaround_time = (now.tv_sec - current[i]->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->arrival_time.tv_nsec) / 1000000.0;
-            ++current[i]->times_executed;
+            // current[i]->turnaround_time = (now.tv_sec - current[i]->arrival_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->arrival_time.tv_nsec) / 1000000.0;
+            current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
             current[i]->prev_wait_time = now;
         }
         current[i] = NULL;
@@ -365,8 +364,8 @@ void signal_handler(int signum, siginfo_t *siginfo, void *trash) {
             }
             if (current[i]->pid == pid) {
                 current[i]->status = TERMINATED;
-                ++current[i]->times_executed;
-                current[i]->total_exe_time = current[i]->times_executed * TSLICE;
+                current[i]->total_exe_time += (now.tv_sec - current[i]->prev_exe_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->prev_exe_time.tv_nsec) / 1000000.0;
+                current[i]->turnaround_time = (now.tv_sec - current[i]->submission_time.tv_sec) * 1000.0 + (now.tv_nsec - current[i]->submission_time.tv_nsec) / 1000000.0;
                 add_to_history(current[i]);
             } else if (current[i]->status != TERMINATED) {
                 processes_alive++;
